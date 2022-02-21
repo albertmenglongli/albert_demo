@@ -33,23 +33,33 @@ class K8sNamespace(Aggregate):
         self.k8s_cluster_id = str(k8s_cluster_id)
         self.namespace = namespace
         self.creation_timestamp = creation_timestamp
-        self.status = status
+        self._status = status
         if owners is None:
             owners = []
-        self.owners = owners
+        self._owners = owners
 
     @staticmethod
     def create_id(k8s_cluster_id: str, namespace: str):
         k8s_cluster_id = str(k8s_cluster_id)
         return uuid5(NAMESPACE_URL, f'/k8s_namespace/{k8s_cluster_id}/{namespace}')
 
+    @property
+    def status(self):
+        return self._status
+
     @event("StatusChanged")
-    def set_status(self, status: str) -> None:
-        self.status = status
+    @status.setter
+    def status(self, status: str) -> None:
+        self._status = status
+
+    @property
+    def owners(self):
+        return self._owners
 
     @event("OwnersChanged")
-    def set_owners(self, owners: List[str]):
-        self.owners = owners
+    @owners.setter
+    def owners(self, owners: List[str]):
+        self._owners = owners
 
     def to_dict(self):
         data = {"k8s_cluster_id": self.k8s_cluster_id,
@@ -99,12 +109,12 @@ class EvtSourcingApp(RecursionEvtApplication):
 
     def set_k8s_namespace_status(self, k8s_namespace_id: UUID, status: str) -> None:
         k8s_namespace = cast(K8sNamespace, self.repository.get(k8s_namespace_id))
-        k8s_namespace.set_status(status)
+        k8s_namespace.status = status
         self.save(k8s_namespace)
 
     def set_k8s_namespace_owners(self, k8s_namespace_id: UUID, owners: List[str]) -> None:
         k8s_namespace = cast(K8sNamespace, self.repository.get(k8s_namespace_id))
-        k8s_namespace.set_owners(owners)
+        k8s_namespace.owners = owners
         self.save(k8s_namespace)
 
     def get_k8s_namespace_data(self, k8s_namespace_id: UUID) -> Dict[str, Any]:
@@ -128,7 +138,7 @@ class EvtSourcingApp(RecursionEvtApplication):
             ),
         )
         if k8s_namespace.status == K8sNamespace.Status.DELETED:
-            k8s_namespace.set_status(K8sNamespace.Status.K8S_DELETED)
+            k8s_namespace.status = K8sNamespace.Status.K8S_DELETED
             # do some remote deletion on k8s
             print(f'Namespace {k8s_namespace.namespace} deleted on k8s cluster {k8s_namespace.k8s_cluster_id}')
             processing_event.collect_events(k8s_namespace)
