@@ -51,6 +51,15 @@ class K8sNamespace(Aggregate):
     def set_owners(self, owners: List[str]):
         self.owners = owners
 
+    def to_dict(self):
+        data = {"k8s_cluster_id": self.k8s_cluster_id,
+                "namespace": self.namespace,
+                "creation_timestamp": self.creation_timestamp,
+                "status": self.status,
+                "owners": self.owners,
+                }
+        return data
+
 
 class RecursionEvtApplication(Application):
     def _record(self, processing_event: ProcessingEvent) -> List[Recording]:
@@ -98,13 +107,9 @@ class EvtSourcingApp(RecursionEvtApplication):
         k8s_namespace.set_owners(owners)
         self.save(k8s_namespace)
 
-    def get_k8s_namespace(self, k8s_namespace_id: UUID) -> Dict[str, Any]:
+    def get_k8s_namespace_data(self, k8s_namespace_id: UUID) -> Dict[str, Any]:
         k8s_namespace = cast(K8sNamespace, self.repository.get(k8s_namespace_id))
-        return {"k8s_cluster_id": k8s_namespace.k8s_cluster_id,
-                "namespace": k8s_namespace.namespace,
-                "status": k8s_namespace.status,
-                "owners": k8s_namespace.owners,
-                }
+        return k8s_namespace.to_dict()
 
     @singledispatchmethod
     def policy(self, domain_event, processing_event) -> None:
@@ -149,12 +154,12 @@ def test_recursion_app():
         owners = ns_data['owners']
         k8s_namespace_id: UUID = K8sNamespace.create_id(k8s_cluster_id, namespace)
         try:
-            k8s_namespace_data = app.get_k8s_namespace(k8s_namespace_id)
+            k8s_namespace_data = app.get_k8s_namespace_data(k8s_namespace_id)
         except AggregateNotFound as e:
             k8s_namespace_id = app.register_k8s_namespace(k8s_cluster_id=k8s_cluster_id,
                                                           namespace=namespace, creation_timestamp=creation_timestamp,
                                                           owners=owners)
-            k8s_namespace_data = app.get_k8s_namespace(k8s_namespace_id)
+            k8s_namespace_data = app.get_k8s_namespace_data(k8s_namespace_id)
 
         if k8s_namespace_data["status"] != K8sNamespace.Status.AVAILABLE:
             app.set_k8s_namespace_status(k8s_namespace_id, K8sNamespace.Status.AVAILABLE)
@@ -167,8 +172,12 @@ def test_recursion_app():
     namespace_to_delete = 'albert1'
     k8s_namespace_id = K8sNamespace.create_id(k8s_cluster_id, namespace_to_delete)
     try:
-        k8s_namespace_data = app.get_k8s_namespace(k8s_namespace_id)
+        k8s_namespace_data = app.get_k8s_namespace_data(k8s_namespace_id)
         if k8s_namespace_data['status'] not in {K8sNamespace.Status.DELETED, K8sNamespace.Status.K8S_DELETED}:
             app.set_k8s_namespace_status(k8s_namespace_id, K8sNamespace.Status.DELETED)
     except AggregateNotFound as e:
         pass
+
+
+if __name__ == '__main__':
+    test_recursion_app()
